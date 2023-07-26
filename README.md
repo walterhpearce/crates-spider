@@ -2,6 +2,23 @@
 
 Spiders all crates from crates.io into a working directory.
 
+## Quick Start
+
+- Download all crates in parallel
+
+`cargo run -- --workdir workdir spider`
+
+Optional Argument: `--only-most-recent` for only the latest revision of a crate.
+
+- Extract all downloaded crates
+
+`cargo run -- --workdir workdir extract`
+
+## Future Work
+- Sync mirror instead of forced redownload
+- Parallelization settings for load reduction
+- Download and extraction workdir layout configuration
+
 ## [Code of Conduct][code-of-conduct]
 
 The Rust Foundation has adopted a Code of Conduct that we expect project
