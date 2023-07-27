@@ -2,7 +2,8 @@ on: pull_request
 name: Clippy check
 jobs:
   clippy_check:
-    permissions: pull-requests:write
+    permissions:
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
