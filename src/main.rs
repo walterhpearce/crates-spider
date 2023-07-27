@@ -1,5 +1,8 @@
-use std::path::{PathBuf,Path};
-use log::{trace, debug, info};
+#![deny(clippy::all, clippy::pedantic)]
+#![allow(clippy::almost_swapped)] // Why is clippy flagging clap?
+
+use log::{debug, info, trace};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -13,16 +16,19 @@ pub enum Error {
     FileError(#[from] std::io::Error),
 }
 
-async fn download_crate(workdir: &Path, name: &str, version: &str) -> Result<(), Error> {
+async fn download_crate(
+    workdir: &Path,
+    name: &str,
+    version: &str,
+    new_only: bool,
+) -> Result<(), Error> {
     use bytes::Buf;
 
-    let filename = format!("{}-{}.crate", name, version);
+    let filename = format!("{name}-{version}.crate");
     let out_file = workdir.join("crates").join(&filename);
 
-    if ! out_file.exists() {
-        let url = format!("https://static.crates.io/crates/{}/{}",
-                          name,
-                          filename);
+    if !new_only || !out_file.exists() {
+        let url = format!("https://static.crates.io/crates/{name}/{filename}");
 
         debug!("Fetching {}", url);
         let response = reqwest::get(url).await?;
@@ -38,31 +44,41 @@ async fn download_crate(workdir: &Path, name: &str, version: &str) -> Result<(),
     Ok(())
 }
 
-async fn spider_crates<P: AsRef<Path>>(workdir: P, only_most_recent: bool) -> Result<(), Error>{
+async fn spider_crates<P: AsRef<Path>>(
+    workdir: P,
+    only_most_recent: bool,
+    new_only: bool,
+) -> Result<(), Error> {
     env_logger::init();
 
     let index = crates_index::Index::new_cargo_default().unwrap();
 
-    let _ = std::fs::create_dir(workdir.as_ref().join("crates"));
+    std::fs::create_dir(workdir.as_ref().join("crates")).unwrap();
 
     let sem = Arc::new(Semaphore::new(MAX_PAR));
 
     for crate_releases in index.crates() {
         let workdir_clone = workdir.as_ref().to_path_buf();
-        let _ = crate_releases.most_recent_version(); // newest version
 
         let versions = if only_most_recent {
             vec![crate_releases.highest_version().clone()]
         } else {
-            crate_releases.versions().iter().map(crates_index::Version::clone).collect()
+            crate_releases
+                .versions()
+                .iter()
+                .map(crates_index::Version::clone)
+                .collect()
         };
 
         let permit = Arc::clone(&sem).acquire_owned().await;
         tokio::spawn(async move {
-            let _permit = permit;
+            #[allow(unused_variables)]
+            let permit = permit;
             trace!("{:?}", versions);
             for version in versions {
-                download_crate(&workdir_clone, version.name(), version.version()).await.unwrap();
+                download_crate(&workdir_clone, version.name(), version.version(), new_only)
+                    .await
+                    .unwrap();
             }
         });
     }
@@ -74,25 +90,24 @@ async fn extract_crates<P: AsRef<Path>>(workdir: &P) -> Result<(), Error> {
     let paths = std::fs::read_dir(workdir.as_ref().join("crates")).unwrap();
     let ex_path = workdir.as_ref().join("sources");
 
-    let _ = std::fs::create_dir(&ex_path);
+    std::fs::create_dir(&ex_path).unwrap();
 
     let sem = Arc::new(Semaphore::new(MAX_PAR));
 
-    for entry_result in paths {
-        if let Ok(entry) = entry_result {
-            let cratefile = entry.path().to_path_buf();
-            let ex_path_clone = ex_path.clone();
-            debug!("Name: {}", cratefile.display());
+    for entry in paths.flatten() {
+        let cratefile = entry.path();
+        let ex_path_clone = ex_path.clone();
+        debug!("Name: {}", cratefile.display());
 
-            let permit = Arc::clone(&sem).acquire_owned().await;
-            tokio::spawn(async move {
-                let _permit = permit;
-                let tar_gz = std::fs::File::open(cratefile).unwrap();
-                let tar = flate2::read::GzDecoder::new(tar_gz);
-                let mut archive = tar::Archive::new(tar);
-                archive.unpack(ex_path_clone).unwrap();
-            });
-        }
+        let permit = Arc::clone(&sem).acquire_owned().await;
+        tokio::spawn(async move {
+            #[allow(unused_variables)]
+            let permit = permit;
+            let tar_gz = std::fs::File::open(cratefile).unwrap();
+            let tar = flate2::read::GzDecoder::new(tar_gz);
+            let mut archive = tar::Archive::new(tar);
+            archive.unpack(ex_path_clone).unwrap();
+        });
     }
     Ok(())
 }
@@ -100,11 +115,14 @@ async fn extract_crates<P: AsRef<Path>>(workdir: &P) -> Result<(), Error> {
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
     Spider {
-        #[clap(long, short, action, default_value = "false")]
+        #[arg(long, short, default_value = "false")]
         only_most_recent: bool,
+        #[arg(long, short, default_value = "true")]
+        update_only: bool,
     },
-    Extract
+    Extract,
 }
+
 #[derive(clap::Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -123,8 +141,11 @@ async fn main() {
 
     match &args.command {
         Commands::Spider {
-            only_most_recent
-        } => spider_crates(&args.workdir, *only_most_recent).await.unwrap(),
+            only_most_recent,
+            update_only,
+        } => spider_crates(&args.workdir, *only_most_recent, *update_only)
+            .await
+            .unwrap(),
         Commands::Extract => extract_crates(&args.workdir).await.unwrap(),
     }
 }
