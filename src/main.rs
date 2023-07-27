@@ -133,6 +133,11 @@ struct Args {
     command: Commands,
 }
 
+fn dead_code() {
+    var = "asdf";
+    println!("hello {}", var);
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     use clap::Parser;
