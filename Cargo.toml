@@ -1,5 +1,5 @@
 [package]
-name = "crate-spider"
+name = "crates-spider"
 version = "0.1.0"
 edition = "2021"
 
