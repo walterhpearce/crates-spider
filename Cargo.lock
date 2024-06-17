@@ -235,6 +235,8 @@ dependencies = [
  "flate2",
  "log",
  "reqwest",
+ "serde",
+ "serde_json",
  "tar",
  "thiserror",
  "tokio",
@@ -1079,6 +1081,9 @@ name = "serde"
 version = "1.0.176"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76dc28c9523c5d70816e393136b86d48909cfb27cecaa902d338c19ed47164dc"
+dependencies = [
+ "serde_derive",
+]
 
 [[package]]
 name = "serde_derive"
